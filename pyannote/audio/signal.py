@@ -324,3 +324,43 @@ class Binarize(object):
         active = active.coverage()
 
         return active
+
+class Argmax(object):
+    """"""
+    def __init__(self):
+        super(Argmax, self).__init__()
+        self.mapping_ = np.array(['non_speech', 'male',
+                         'female', 'unknown'])
+
+    def apply(self, predictions):
+        """
+        Parameters
+        ----------
+        predictions : SlidingWindowFeature
+            Must be mono-dimensional
+        dimension : int, optional
+            Which dimension to process
+        """
+
+        data = self.mapping_[np.argmax(predictions.data, axis=1)]
+        n_samples = predictions.getNumber()
+        window = predictions.sliding_window
+        timestamps = [window[i].middle for i in range(n_samples)]
+
+        # initial state
+        start = timestamps[0]
+        previous_label = data[0]
+
+        result = Annotation()
+
+        for t, label in zip(timestamps[1:], data[1:]):
+            if label != previous_label:
+                segment = Segment(start, t)
+                result[segment] = previous_label
+                start = t
+                previous_label = label
+
+        segment = Segment(start, t)
+        result[segment] = label
+
+        return result

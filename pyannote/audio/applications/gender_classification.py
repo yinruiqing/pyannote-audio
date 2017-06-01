@@ -31,8 +31,6 @@ Speech activity detection
 
 Usage:
   pyannote-speech-detection train [--database=<db.yml> --subset=<subset>] <experiment_dir> <database.task.protocol>
-  pyannote-speech-detection validate [--database=<db.yml> --subset=<subset>] <train_dir> <database.task.protocol>
-  pyannote-speech-detection tune  [--database=<db.yml> --subset=<subset>] <train_dir> <database.task.protocol>
   pyannote-speech-detection apply [--database=<db.yml> --subset=<subset>] <tune_dir> <database.task.protocol>
   pyannote-speech-detection -h | --help
   pyannote-speech-detection --version
@@ -104,18 +102,6 @@ Configuration file:
     <database.task.protocol> protocol. By default, <subset> is "train".
     This directory is called <train_dir> in the subsequent "tune" mode.
 
-"tune" mode:
-    Then, one should tune the hyper-parameters using "tune" mode.
-    This will create the following files describing the best hyper-parameters
-    to use:
-
-        <train_dir>/tune/<database.task.protocol>.<subset>/tune.yml
-        <train_dir>/tune/<database.task.protocol>.<subset>/tune.png
-
-    This means that hyper-parameters were tuned on the <subset> subset of the
-    <database.task.protocol> protocol. By default, <subset> is "development".
-    This directory is called <tune_dir> in the subsequent "apply" mode.
-
 "apply" mode
     Finally, one can apply speech activity detection using "apply" mode.
     This will create the following files that contains the hard (mdtm) and
@@ -151,7 +137,7 @@ from pyannote.audio.optimizers import SSMORMS3
 from pyannote.audio.callback import LoggingCallback
 
 from pyannote.audio.labeling.aggregation import SequenceLabelingAggregation
-from pyannote.audio.signal import Binarize
+from pyannote.audio.signal import Argmax
 from pyannote.database.util import get_unique_identifier
 from pyannote.database.util import get_annotated
 from pyannote.database import get_protocol
@@ -173,54 +159,6 @@ from tqdm import tqdm
 import skopt
 import skopt.space
 from pyannote.metrics.detection import DetectionErrorRate
-
-
-def tune_binarizer(app, epoch, protocol_name, subset='development'):
-    """Tune binarizer
-
-    Parameters
-    ----------
-    app : SpeechActivityDetection
-    epoch : int
-        Epoch number.
-    protocol_name : str
-        E.g. 'Etape.SpeakerDiarization.TV'
-    subset : {'train', 'development', 'test'}, optional
-        Defaults to 'development'.
-
-    Returns
-    -------
-    params : dict
-        See Binarize.tune
-    metric : float
-        Best achieved detection error rate
-    """
-
-    # initialize protocol
-    protocol = get_protocol(protocol_name, progress=False,
-                            preprocessors=app.preprocessors_)
-
-    # load model for epoch 'epoch'
-    sequence_labeling = SequenceLabeling.from_disk(
-        app.train_dir_, epoch)
-
-    # initialize sequence labeling
-    duration = app.config_['sequences']['duration']
-    step = app.config_['sequences']['step']
-    aggregation = SequenceLabelingAggregation(
-        sequence_labeling, app.feature_extraction_,
-        duration=duration, step=step)
-    aggregation.cache_preprocessed_ = False
-
-    # tune Binarize thresholds (onset & offset)
-    # with respect to detection error rate
-    binarize_params, metric = Binarize.tune(
-        getattr(protocol, subset)(),
-        aggregation.apply,
-        get_metric=DetectionErrorRate,
-        dimension=1)
-
-    return binarize_params, metric
 
 
 class SpeechActivityDetection(Application):
@@ -309,199 +247,6 @@ class SpeechActivityDetection(Application):
 
         return labeling
 
-    def _validation_set(self, protocol_name, subset='development'):
-        # this generator is hacked to generate y_true
-        # (which is stored in its internal preprocessed_ attribute)
-        batch_generator = SpeechActivityDetectionBatchGenerator(
-            self.feature_extraction_)
-        batch_generator.cache_preprocessed_ = True
-
-        # iterate over each test file and generate y_true
-        protocol = get_protocol(protocol_name, progress=False,
-                                preprocessors=self.preprocessors_)
-        file_generator = getattr(protocol, subset)()
-        for current_file in file_generator:
-            identifier = get_unique_identifier(current_file)
-            batch_generator.preprocess(current_file, identifier=identifier)
-
-        return batch_generator.preprocessed_['y']
-
-    def validate(self, protocol_name, subset='development'):
-
-        # prepare paths
-        validate_dir = self.VALIDATE_DIR.format(train_dir=self.train_dir_,
-                                                protocol=protocol_name)
-        validate_txt = self.VALIDATE_TXT.format(validate_dir=validate_dir,
-                                                subset=subset)
-        validate_png = self.VALIDATE_PNG.format(validate_dir=validate_dir,
-                                                subset=subset)
-        validate_eps = self.VALIDATE_EPS.format(validate_dir=validate_dir,
-                                                subset=subset)
-
-        # create validation directory
-        mkdir_p(validate_dir)
-
-        # Build validation set
-        y = self._validation_set(protocol_name, subset=subset)
-
-        # list of equal error rates, and current epoch
-        eers, epoch = [], 0
-
-        desc_format = ('EER = {eer:.2f}% @ epoch #{epoch:d} ::'
-                      ' Best EER = {best_eer:.2f}% @ epoch #{best_epoch:d} :')
-        progress_bar = tqdm(unit='epoch', total=1000)
-
-        with open(validate_txt, mode='w') as fp:
-
-            # watch and evaluate forever
-            while True:
-
-                weights_h5 = LoggingCallback.WEIGHTS_H5.format(
-                    log_dir=self.train_dir_, epoch=epoch)
-
-                # wait until weight file is available
-                if not isfile(weights_h5):
-                    time.sleep(60)
-                    continue
-
-                # load model for current epoch
-                sequence_labeling = SequenceLabeling.from_disk(
-                    self.train_dir_, epoch)
-
-                # initialize sequence labeling
-                duration = self.config_['sequences']['duration']
-                step = duration   # hack to make things faster
-                # step = self.config_['sequences']['step']
-                aggregation = SequenceLabelingAggregation(
-                    sequence_labeling, self.feature_extraction_,
-                    duration=duration, step=step)
-                aggregation.cache_preprocessed_ = False
-
-                # estimate equal error rate (average of all files)
-                eers_ = []
-                protocol = get_protocol(protocol_name, progress=False,
-                                        preprocessors=self.preprocessors_)
-                file_generator = getattr(protocol, subset)()
-                for current_file in file_generator:
-                    identifier = get_unique_identifier(current_file)
-                    uem = get_annotated(current_file)
-                    y_true = y[identifier].crop(uem)[:, 1]
-                    counts = Counter(y_true)
-                    if counts[0] * counts[1] == 0:
-                        continue
-                    y_pred = aggregation.apply(current_file).crop(uem)[:, 1]
-
-                    _, _, _, eer = det_curve(y_true, y_pred, distances=False)
-
-                    eers_.append(eer)
-                eer = np.mean(eers_)
-                eers.append(eer)
-
-                # save equal error rate to file
-                fp.write(self.VALIDATE_TXT_TEMPLATE.format(
-                    epoch=epoch, eer=eer))
-                fp.flush()
-
-                # keep track of best epoch so far
-                best_epoch, best_eer = np.argmin(eers), np.min(eers)
-
-                progress_bar.set_description(
-                    desc_format.format(epoch=epoch, eer=100*eer,
-                                       best_epoch=best_epoch,
-                                       best_eer=100*best_eer))
-                progress_bar.update(1)
-
-                # plot
-                fig = plt.figure()
-                plt.plot(eers, 'b')
-                plt.plot([best_epoch], [best_eer], 'bo')
-                plt.plot([0, epoch], [best_eer, best_eer], 'k--')
-                plt.grid(True)
-                plt.xlabel('epoch')
-                plt.ylabel('EER on {subset}'.format(subset=subset))
-                TITLE = '{best_eer:.5g} @ epoch #{best_epoch:d}'
-                title = TITLE.format(best_eer=best_eer,
-                                     best_epoch=best_epoch,
-                                     subset=subset)
-                plt.title(title)
-                plt.tight_layout()
-                plt.savefig(validate_png, dpi=150)
-                plt.savefig(validate_eps)
-                plt.close(fig)
-
-                # validate next epoch
-                epoch += 1
-
-        progress_bar.close()
-
-    def tune(self, protocol_name, subset='development'):
-
-        tune_dir = self.TUNE_DIR.format(
-            train_dir=self.train_dir_,
-            protocol=protocol_name,
-            subset=subset)
-
-        mkdir_p(tune_dir)
-
-        epoch = self.get_epochs(self.train_dir_)
-        space = [skopt.space.Integer(0, epoch - 1)]
-
-        best_binarize_params = {}
-        best_metric = {}
-
-        tune_yml = self.TUNE_YML.format(tune_dir=tune_dir)
-        tune_png = self.TUNE_PNG.format(tune_dir=tune_dir)
-
-        def callback(res):
-
-            # plot convergence
-            import matplotlib
-            matplotlib.use('Agg')
-            import matplotlib.pyplot as plt
-            import skopt.plots
-            _ = skopt.plots.plot_convergence(res)
-            plt.savefig(tune_png, dpi=75)
-            plt.close()
-
-            # save state
-            params = {'status': {'epochs': epoch,
-                                 'objective': float(res.fun)},
-                      'epoch': int(res.x[0]),
-                      'onset': float(best_binarize_params[tuple(res.x)]['onset']),
-                      'offset': float(best_binarize_params[tuple(res.x)]['offset'])
-                      }
-
-            with io.open(tune_yml, 'w') as fp:
-                yaml.dump(params, fp, default_flow_style=False)
-
-        def objective_function(params):
-
-            params = tuple(params)
-            epoch, = params
-
-            # do not rerun everything if epoch has already been tested
-            if params in best_metric:
-                return best_metric[params]
-
-            # tune binarizer
-            binarize_params, metric = tune_binarizer(
-                self, epoch, protocol_name, subset=subset)
-
-            # remember outcome of this trial
-            best_binarize_params[params] = binarize_params
-            best_metric[params] = metric
-
-            return metric
-
-        res = skopt.gp_minimize(
-            objective_function, space, random_state=1337,
-            n_calls=20, n_random_starts=10, x0=[epoch - 1],
-            verbose=True, callback=callback)
-
-        # TODO tune Binarize a bit longer with the best epoch
-
-        return {'epoch': res.x[0]}, res.fun
-
     def apply(self, protocol_name, subset='test'):
 
         apply_dir = self.APPLY_DIR.format(tune_dir=self.tune_dir_)
@@ -514,7 +259,7 @@ class SpeechActivityDetection(Application):
             self.tune_ = yaml.load(fp)
 
         # load model for epoch 'epoch'
-        epoch = self.tune_['epoch']
+        epoch = self.get_epochs(self.train_dir_) - 1
         sequence_labeling = SequenceLabeling.from_disk(
             self.train_dir_, epoch)
 
@@ -541,7 +286,7 @@ class SpeechActivityDetection(Application):
                 f.attrs['start'] = prediction.sliding_window.start
                 f.attrs['duration'] = prediction.sliding_window.duration
                 f.attrs['step'] = prediction.sliding_window.step
-                f.attrs['dimension'] = 2
+                f.attrs['dimension'] = 4
                 f.close()
 
             path = Precomputed.get_path(apply_dir, item)
@@ -553,14 +298,12 @@ class SpeechActivityDetection(Application):
             f.attrs['start'] = prediction.sliding_window.start
             f.attrs['duration'] = prediction.sliding_window.duration
             f.attrs['step'] = prediction.sliding_window.step
-            f.attrs['dimension'] = 2
+            f.attrs['dimension'] = 4
             f.create_dataset('features', data=prediction.data)
             f.close()
 
         # initialize binarizer
-        onset = self.tune_['onset']
-        offset = self.tune_['offset']
-        binarize = Binarize(onset=onset, offset=offset)
+        argmax = Argmax()
 
         precomputed = Precomputed(root_dir=apply_dir)
 
@@ -570,10 +313,8 @@ class SpeechActivityDetection(Application):
         with io.open(path, mode='w') as gp:
             for item in getattr(protocol, subset)():
                 prediction = precomputed(item)
-                segmentation = binarize.apply(prediction, dimension=1)
-                writer.write(segmentation.to_annotation(),
-                             f=gp, uri=item['uri'], modality='speaker')
-
+                result = argmax.apply(prediction)
+                writer.write(result, f=gp, uri=item['uri'], modality='gender')
 
 def main():
 
