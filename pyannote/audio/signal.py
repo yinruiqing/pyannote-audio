@@ -356,7 +356,8 @@ class Argmax(object):
         for t, label in zip(timestamps[1:], data[1:]):
             if label != previous_label:
                 segment = Segment(start, t)
-                result[segment] = previous_label
+                if previous_label != 'non_speech':
+                    result[segment] = previous_label
                 start = t
                 previous_label = label
 
