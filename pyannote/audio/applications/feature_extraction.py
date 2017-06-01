@@ -93,7 +93,7 @@ def extract(database_name, task_name, protocol_name, preprocessors, experiment_d
     database = get_database(database_name, preprocessors=preprocessors)
     protocol = database.get_protocol(task_name, protocol_name, progress=True)
 
-    if task_name == 'SpeakerDiarization':
+    if task_name in ['SpeakerDiarization', 'Segmentation']:
         items = itertools.chain(protocol.train(),
                                 protocol.development(),
                                 protocol.test())
