@@ -21,6 +21,7 @@
 # AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+
 # SOFTWARE.
 
 # AUTHORS
@@ -62,6 +63,7 @@ setup(
             'pyannote-change-detection=pyannote.audio.applications.change_detection:main',
             'pyannote-speaker-embedding=pyannote.audio.applications.speaker_embedding:main',
             'pyannote-bic-clustering=pyannote.audio.applications.bic_clustering:main']
+            'pyannote-gender-segmentation=pyannote.audio.applications.gender_classification:main',
     },
     # versioneer
     version=versioneer.get_version(),
