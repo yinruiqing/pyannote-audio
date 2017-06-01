@@ -130,7 +130,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 from pyannote.audio.labeling.base import SequenceLabeling
-from pyannote.audio.generators.speech import \
+from pyannote.audio.generators.speaker import \
     GenderSegmentationBatchGenerator
 from pyannote.audio.optimizers import SSMORMS3
 

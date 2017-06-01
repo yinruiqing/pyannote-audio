@@ -30,7 +30,7 @@ from pyannote.audio.generators.periodic import PeriodicFeaturesMixin
 from pyannote.core import SlidingWindowFeature
 from pyannote.generators.fragment import SlidingSegments
 from pyannote.generators.batch import FileBasedBatchGenerator
-from pyannote.databse.util import get_annotated
+from pyannote.database.util import get_annotated
 import numpy as np
 
 
@@ -44,6 +44,7 @@ class SpeechActivityDetectionBatchGenerator(PeriodicFeaturesMixin,
         self.duration = duration
         self.step = step
 
+        # yield sliding segments on the 'annotated' part
         segment_generator = SlidingSegments(duration=duration,
                                             step=step,
                                             source='annotated')
@@ -112,7 +113,6 @@ class SpeechActivityDetectionBatchGenerator(PeriodicFeaturesMixin,
             segment, mode='center', fixed=duration)
 
         return [X, y]
-
 
 class OverlappingSpeechDetectionBatchGenerator(PeriodicFeaturesMixin,
                                                FileBasedBatchGenerator):
