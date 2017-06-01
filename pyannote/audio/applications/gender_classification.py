@@ -31,7 +31,7 @@ Speech activity detection
 
 Usage:
   pyannote-speech-detection train [--database=<db.yml> --subset=<subset>] <experiment_dir> <database.task.protocol>
-  pyannote-speech-detection apply [--database=<db.yml> --subset=<subset>] <tune_dir> <database.task.protocol>
+  pyannote-speech-detection apply [--database=<db.yml> --subset=<subset>] <train_dir> <database.task.protocol>
   pyannote-speech-detection -h | --help
   pyannote-speech-detection --version
 
@@ -331,26 +331,10 @@ def main():
         application = SpeechActivityDetection(experiment_dir, db_yml=db_yml)
         application.train(protocol_name, subset=subset)
 
-    if arguments['validate']:
-        train_dir = arguments['<train_dir>']
-        if subset is None:
-            subset = 'development'
-        application = SpeechActivityDetection.from_train_dir(
-            train_dir, db_yml=db_yml)
-        application.validate(protocol_name, subset=subset)
-
-    if arguments['tune']:
-        train_dir = arguments['<train_dir>']
-        if subset is None:
-            subset = 'development'
-        application = SpeechActivityDetection.from_train_dir(
-            train_dir, db_yml=db_yml)
-        application.tune(protocol_name, subset=subset)
-
     if arguments['apply']:
-        tune_dir = arguments['<tune_dir>']
+        train_dir = arguments['<train_dir>']
         if subset is None:
             subset = 'test'
-        application = SpeechActivityDetection.from_tune_dir(
-            tune_dir, db_yml=db_yml)
+        application = SpeechActivityDetection.from_train_dir(
+            train_dir, db_yml=db_yml)
         application.apply(protocol_name, subset=subset)
