@@ -165,19 +165,7 @@ class SpeechActivityDetection(Application):
 
     # created by "train" mode
     TRAIN_DIR = '{experiment_dir}/train/{protocol}.{subset}'
-    APPLY_DIR = '{tune_dir}/apply'
-
-    # created by "validate" mode
-    VALIDATE_DIR = '{train_dir}/validate/{protocol}'
-    VALIDATE_TXT = '{validate_dir}/{subset}.eer.txt'
-    VALIDATE_TXT_TEMPLATE = '{epoch:04d} {eer:5f}\n'
-    VALIDATE_PNG = '{validate_dir}/{subset}.eer.png'
-    VALIDATE_EPS = '{validate_dir}/{subset}.eer.eps'
-
-    # created by "tune" mode
-    TUNE_DIR = '{train_dir}/tune/{protocol}.{subset}'
-    TUNE_YML = '{tune_dir}/tune.yml'
-    TUNE_PNG = '{tune_dir}/tune.png'
+    APPLY_DIR = '{train_dir}/apply'
 
     HARD_MDTM = '{apply_dir}/{protocol}.{subset}.mdtm'
 
@@ -186,14 +174,6 @@ class SpeechActivityDetection(Application):
         experiment_dir = dirname(dirname(train_dir))
         speech_activity_detection = cls(experiment_dir, db_yml=db_yml)
         speech_activity_detection.train_dir_ = train_dir
-        return speech_activity_detection
-
-    @classmethod
-    def from_tune_dir(cls, tune_dir, db_yml=None):
-        train_dir = dirname(dirname(tune_dir))
-        speech_activity_detection = cls.from_train_dir(train_dir,
-                                                       db_yml=db_yml)
-        speech_activity_detection.tune_dir_ = tune_dir
         return speech_activity_detection
 
     def __init__(self, experiment_dir, db_yml=None):
@@ -249,14 +229,9 @@ class SpeechActivityDetection(Application):
 
     def apply(self, protocol_name, subset='test'):
 
-        apply_dir = self.APPLY_DIR.format(tune_dir=self.tune_dir_)
+        apply_dir = self.APPLY_DIR.format(train_dir=self.train_dir_)
 
         mkdir_p(apply_dir)
-
-        # load tuning results
-        tune_yml = self.TUNE_YML.format(tune_dir=self.tune_dir_)
-        with io.open(tune_yml, 'r') as fp:
-            self.tune_ = yaml.load(fp)
 
         # load model for epoch 'epoch'
         epoch = self.get_epochs(self.train_dir_) - 1
