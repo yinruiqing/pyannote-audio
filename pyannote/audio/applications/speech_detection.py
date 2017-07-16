@@ -104,7 +104,20 @@ Configuration file:
 
     This means that the network was trained on the <subset> subset of the
     <database.task.protocol> protocol. By default, <subset> is "train".
-    This directory is called <train_dir> in the subsequent "tune" mode.
+    This directory is called <train_dir> in the subsequent "validate" mode.
+
+"validate" mode:
+    In parallel to training, one should validate the performance of the model
+    epoch after epoch, using "validate" mode. This will create a bunch of files
+    in the following directory:
+
+        <train_dir>/validate/<database.task.protocol>
+
+    This means that the network was validated on the <database.task.protocol>
+    protocol. By default, validation is done on the "development" subset:
+    "developement.DetectionErrorRate.{txt|png|eps}" files are created and
+    updated continuously, epoch after epoch. This directory is called
+    <validate_dir> in the subsequent "tune" mode.
 
 "tune" mode:
     Then, one should tune the hyper-parameters using "tune" mode.
@@ -304,30 +317,14 @@ class SpeechActivityDetection(Application):
 
         return labeling
 
-    def validate_init(self, protocol_name, subset='development'):
-        # this generator is hacked to generate y_true
-        # (which is stored in its internal preprocessed_ attribute)
-        batch_generator = SpeechActivityDetectionBatchGenerator(
-            self.feature_extraction_)
-        batch_generator.cache_preprocessed_ = True
-
-        # iterate over each test file and generate y_true
-        protocol = get_protocol(protocol_name, progress=False,
-                                preprocessors=self.preprocessors_)
-        file_generator = getattr(protocol, subset)()
-        for current_file in file_generator:
-            identifier = get_unique_identifier(current_file)
-            batch_generator.preprocess(current_file, identifier=identifier)
-
-        return {'y': batch_generator.preprocessed_['y']}
-
     def validate_epoch(self, epoch, protocol_name, subset='development',
                        validation_data=None):
 
-        y = validation_data['y']
+        from pyannote.metrics.detection import DetectionErrorRate
+        from pyannote.audio.signal import Binarize
 
-        weights_h5 = LoggingCallback.WEIGHTS_H5.format(
-            log_dir=self.train_dir_, epoch=epoch)
+        der = DetectionErrorRate()
+        binarizer = Binarize(onset=0.5, offset=0.5)
 
         # load model for current epoch
         sequence_labeling = SequenceLabeling.from_disk(
@@ -335,31 +332,25 @@ class SpeechActivityDetection(Application):
 
         # initialize sequence labeling
         duration = self.config_['sequences']['duration']
-        step = duration   # HACK to make things faster during validation
         aggregation = SequenceLabelingAggregation(
             sequence_labeling, self.feature_extraction_,
-            duration=duration, step=step)
+            duration=duration, step=.25 * duration)
         aggregation.cache_preprocessed_ = False
 
-        # estimate equal error rate (average of all files)
-        eers = []
+
         protocol = get_protocol(protocol_name, progress=False,
                                 preprocessors=self.preprocessors_)
         file_generator = getattr(protocol, subset)()
         for current_file in file_generator:
-            identifier = get_unique_identifier(current_file)
+
+            predictions = aggregation.apply(current_file)
+            hypothesis = binarizer.apply(predictions, dimension=1)
+
+            reference = current_file['annotation'].get_timeline().support()
             uem = get_annotated(current_file)
-            y_true = y[identifier].crop(uem)[:, 1]
-            counts = Counter(y_true)
-            if counts[0] * counts[1] == 0:
-                continue
-            y_pred = aggregation.apply(current_file).crop(uem)[:, 1]
+            _ = der(reference, hypothesis, uem=uem)
 
-            _, _, _, eer = det_curve(y_true, y_pred, distances=False)
-
-            eers.append(eer)
-
-        return {'EER': {'minimize': True, 'value': np.mean(eers)}}
+        return {'DetectionErrorRate': {'minimize': True, 'value': abs(der)}}
 
     def tune(self, protocol_name, subset='development'):
 
