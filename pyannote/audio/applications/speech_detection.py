@@ -46,6 +46,11 @@ Common options:
                              In "validate" mode, defaults to "development".
                              In "tune" mode, defaults to "development".
                              In "apply" mode, defaults to "test".
+  --from=<epoch>             Start validating/tuning at epoch <epoch>.
+                             Defaults to first available epoch.
+  --to=<epoch>               End validation/tuning at epoch <epoch>.
+                             In "validate" mode, defaults to never stop.
+                             In "tune" mode, defaults to last available epoch at launch time.
 
 "train" mode:
   <experiment_dir>           Set experiment root directory. This script expects
@@ -54,17 +59,11 @@ Common options:
                              section below for more details.
 
 "validation" mode:
-  --from=<epoch>             Start validation at epoch <epoch> [default: 0].
-  --to=<epoch>               End validation at epoch <epoch>. Defaults to never stop.
   --every=<epoch>            Validate model every <epoch> epochs [default: 1].
   <train_dir>                Path to the directory containing pre-trained
                              models (i.e. the output of "train" mode).
 
 "tune" mode:
-  --from=<epoch>             Start tuning at epoch <epoch>.
-                             Defaults to first available epoch at launch time.
-  --to=<epoch>               End tuning at epoch <epoch>.
-                             Defaults to last available epoch at launch time.
   <train_dir>                Path to the directory containing pre-trained
                              models (i.e. the output of "train" mode).
 
