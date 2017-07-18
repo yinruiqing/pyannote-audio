@@ -436,7 +436,7 @@ class SpeechActivityDetection(Application):
 
         res = skopt.gp_minimize(
             objective_function, space, random_state=1337,
-            n_calls=20, n_random_starts=10, x0=[epoch - 1],
+            n_calls=20, n_random_starts=10, x0=[end],
             verbose=True, callback=callback)
 
         # TODO tune Binarize a bit longer with the best epoch
