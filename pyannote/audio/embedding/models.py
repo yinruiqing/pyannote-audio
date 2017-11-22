@@ -437,7 +437,7 @@ class ClopiNet(object):
             masking = Masking(mask_value=0.)
             x = masking(inputs)
         else:
-            x =  inputs
+            x = inputs
 
         # stack (bidirectional) recurrent layers
         for i, output_dim in enumerate(self.recurrent):
