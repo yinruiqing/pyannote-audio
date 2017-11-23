@@ -34,11 +34,12 @@ from keras.models import Model
 from keras.layers import Input
 from keras.layers import Masking
 from keras.layers import Dense
+from keras.layers import Flatten
 from keras.layers import Lambda
 from keras.layers import Permute
 from keras.layers import RepeatVector
+from keras.layers import Concatenate
 from keras.layers import Multiply
-from keras.layers.merge import Concatenate
 from keras.layers.wrappers import Bidirectional
 from keras.layers.wrappers import TimeDistributed
 import numpy as np
@@ -342,27 +343,6 @@ class TrottiNet(object):
     def output_dim(self):
         return self.mlp[-1]
 
-# https://github.com/philipperemy/keras-attention-mechanism/blob/master/attention_lstm.py
-
-def attend(inputs, name=None):
-
-    # shape = (batch_size, time_steps, input_dim)
-    batch_size, time_steps, input_dim = inputs.shape
-
-    a = Permute((2, 1))(inputs)
-    # shape = (batch_size, input_dim, time_steps)
-
-    a = Dense(time_steps, activation='softmax', name='attention')(a)
-    # shape = (batch_size, time_steps)
-
-    a = RepeatVector(input_dim)(a)
-    # shape = (batch_size, time_steps, input_dim)
-
-    a = Permute((2, 1))(a)
-    # shape = (batch_size, input_dim, time_steps)
-
-    return Multiply(name=name)([inputs, a])
-    # shape = (batch_size, input_dim, time_steps)
 
 class ClopiNet(object):
     """ClopiNet sequence embedding
@@ -510,10 +490,6 @@ class ClopiNet(object):
         # just rename the concatenated output variable to x
         x = concat_x
 
-        if self.attention:
-            name = 'internal' if internal_layer else None
-            x = attend(x, name=name)
-
         # (optionally) stack dense MLP layers
         for i, output_dim in enumerate(self.mlp):
 
@@ -530,8 +506,19 @@ class ClopiNet(object):
                         activation=activation,
                         use_bias=use_bias)
 
-            name = 'internal' if internal_layer else None
+            name = 'internal' if (internal_layer and not self.attention) \
+                   else None
             x = TimeDistributed(mlp, name=name)(x)
+
+        if self.attention:
+            # https://github.com/fchollet/keras/issues/1472
+            attention = Dense(input_shape[0],
+                              activation='softmax',
+                              name='attention')
+            a = attention(Flatten()(x))
+            a = RepeatVector(self.output_dim)(a)
+            a = Permute((2, 1))(a)
+            x = Multiply(name='internal')([x, a])
 
         # average pooling and L2 normalization
         pooling = EmbeddingAveragePooling(name='pooling')
