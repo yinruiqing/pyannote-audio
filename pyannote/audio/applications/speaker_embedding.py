@@ -148,6 +148,7 @@ from os.path import dirname, basename, expanduser, isfile
 import numpy as np
 import pandas as pd
 import yaml
+from tqdm import tqdm
 from docopt import docopt
 
 import matplotlib
