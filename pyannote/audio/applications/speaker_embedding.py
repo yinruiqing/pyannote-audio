@@ -394,6 +394,19 @@ class SpeakerEmbedding(Application):
                 Y.resize(i-1, axis=0)
                 Z.resize(i-1, axis=0)
 
+                # precompute feature normalization
+                weights, means, squared_means = zip(*(
+                    (len(x), np.mean(x, axis=0), np.mean(x**2, axis=0))
+                    for x in tqdm(X)))
+                mu = np.average(means, weights=weights, axis=0)
+                squared_mean = np.average(squared_means, weights=weights, axis=0)
+                sigma = np.sqrt(squared_mean - mu ** 2)
+
+                # store it as X attribute
+                X.attrs['mu'] = mu
+                X.attrs['sigma'] = sigma
+
+
     def train(self, protocol_name, subset='train', start=None, end=1000):
 
         data_dir = dirname(self.experiment_dir)
