@@ -277,8 +277,9 @@ class SpeakerChangeDetection(SpeechActivityDetection):
         duration = self.config_['sequences']['duration']
         step = self.config_['sequences']['step']
         balance = self.config_['sequences']['balance']
+        fuzzy = self.config_['sequences']['fuzzy']
         batch_generator = ChangeDetectionBatchGenerator(
-            self.feature_extraction_, duration=duration, step=step,
+            self.feature_extraction_, fuzzy=fuzzy, duration=duration, step=step,
             balance=balance, batch_size=batch_size)
         batch_generator.cache_preprocessed_ = self.cache_preprocessed_
 
@@ -299,7 +300,7 @@ class SpeakerChangeDetection(SpeechActivityDetection):
 
         return SequenceLabeling.train(
             input_shape, self.architecture_, generator, steps_per_epoch, 1000,
-            loss='binary_crossentropy', optimizer=SSMORMS3(),
+            loss=batch_generator.loss, optimizer=SSMORMS3(),
             log_dir=train_dir)
 
         return labeling

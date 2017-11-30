@@ -35,6 +35,7 @@ from pyannote.generators.fragment import SlidingSegments
 from pyannote.generators.batch import FileBasedBatchGenerator
 from pyannote.database.util import get_annotated
 import numpy as np
+from scipy import signal
 
 
 class ChangeDetectionBatchGenerator(PeriodicFeaturesMixin,
@@ -77,14 +78,14 @@ class ChangeDetectionBatchGenerator(PeriodicFeaturesMixin,
     ...     # do something with
     """
 
-    def __init__(self, feature_extractor,
+    def __init__(self, feature_extractor, fuzzy=False,
                  balance=0.01, duration=3.2, step=0.8, batch_size=32):
 
         self.feature_extractor = feature_extractor
         self.duration = duration
         self.step = step
         self.balance = balance
-
+        self.fuzzy = fuzzy
         segment_generator = SlidingSegments(duration=duration,
                                             step=step,
                                             source='annotated')
@@ -99,6 +100,13 @@ class ChangeDetectionBatchGenerator(PeriodicFeaturesMixin,
             {'type': 'ndarray', 'shape': shape},
             {'type': 'ndarray', 'shape': (shape[0], 2)}
         ]
+
+    @property
+    def loss(self):
+        if self.fuzzy:
+            return 'mean_squared_error'
+        else:
+            return 'binary_crossentropy'
 
     def preprocess(self, current_file, identifier=None):
         """Pre-compute file-wise X and y"""
@@ -117,12 +125,8 @@ class ChangeDetectionBatchGenerator(PeriodicFeaturesMixin,
         sw = X.sliding_window
         n_samples = X.getNumber()
 
-        y = np.zeros((n_samples + 4, 1), dtype=np.int8)-1
-        # [-1] ==> unknown / [0] ==> not change part / [1] ==> change part
-
         annotated = get_annotated(current_file)
         annotation = current_file['annotation']
-
 
         segments = []
         for segment, _ in annotation.itertracks():
@@ -130,15 +134,28 @@ class ChangeDetectionBatchGenerator(PeriodicFeaturesMixin,
             segments.append(Segment(segment.end - self.balance, segment.end + self.balance))
         change_part = Timeline(segments).support().crop(annotated, mode='intersection')
 
-        # iterate over non-change regions
-        for non_changes in change_part.gaps(annotated):
-            indices = sw.crop(non_changes, mode='loose')
-            y[indices,0] = 0
-
         # iterate over change regions
-        for changes in change_part:
-            indices = sw.crop(changes, mode='loose')
-            y[indices,0] = 1
+        if self.fuzzy:
+            y = np.zeros((n_samples + 4, 1), dtype=np.float)-1
+            # iterate over non-change regions
+            for non_changes in change_part.gaps(annotated):
+                indices = sw.crop(non_changes, mode='loose')
+                y[indices,0] = 0
+            for changes in change_part:
+                indices = sw.crop(changes, mode='loose')
+                window_size = len(indices)
+                trian_window = signal.triang(window_size)
+                orign_window = y[indices,0]
+                y[indices,0] = [max(t, o) for t, o in zip(trian_window, orign_window)]
+        else:
+            y = np.zeros((n_samples + 4, 1), dtype=np.int8)-1
+            # iterate over non-change regions
+            for non_changes in change_part.gaps(annotated):
+                indices = sw.crop(non_changes, mode='loose')
+                y[indices,0] = 0
+            for changes in change_part:
+                indices = sw.crop(changes, mode='loose')
+                y[indices,0] = 1
 
         y = SlidingWindowFeature(y[:-1], sw)
         self.preprocessed_['y'][identifier] = y
